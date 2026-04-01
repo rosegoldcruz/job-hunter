@@ -1,0 +1,84 @@
+# --- Secrets / environment ---
+.env
+.env.*
+!.env.example
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Python cache / build ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+pip-wheel-metadata/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Test / coverage / type-checking ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# --- Jupyter / notebooks ---
+.ipynb_checkpoints/
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Local databases / temp files ---
+*.sqlite3
+*.db
+*.tmp
+*.temp
+tmp/
+temp/
+
+# --- Editor / OS junk ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Output artifacts ---
+output/
+outputs/
+generated/
+exports/
+
+# --- Runtime / scrape / processing data ---
+data/*
+!data/.gitkeep
+
+# --- Misc ---
+*.bak
+*.swp
+*.swo
