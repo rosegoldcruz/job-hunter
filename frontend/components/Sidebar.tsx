@@ -1,0 +1,112 @@
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+const NAV = [
+  {
+    href: "/",
+    label: "Queue",
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <rect x="1" y="2" width="12" height="2.5" rx="0.5" />
+        <rect x="1" y="5.75" width="12" height="2.5" rx="0.5" />
+        <rect x="1" y="9.5" width="12" height="2.5" rx="0.5" />
+      </svg>
+    ),
+  },
+  {
+    href: "/approved",
+    label: "Approved",
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <path d="M2 7.5L5.5 11 12 3" />
+      </svg>
+    ),
+  },
+  {
+    href: "/pipeline",
+    label: "Pipeline",
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <rect x="1" y="2" width="3" height="10" rx="0.5" />
+        <rect x="5.5" y="4" width="3" height="8" rx="0.5" />
+        <rect x="10" y="1" width="3" height="11" rx="0.5" />
+      </svg>
+    ),
+  },
+  {
+    href: "/sent",
+    label: "Sent",
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <path d="M1 7h12M8 3l5 4-5 4" />
+      </svg>
+    ),
+  },
+  {
+    href: "/resume",
+    label: "Resume",
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <rect x="2" y="1" width="10" height="12" rx="0.5" />
+        <path d="M4 4h6M4 6.5h6M4 9h4" />
+      </svg>
+    ),
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+        <circle cx="7" cy="7" r="2" />
+        <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.93 2.93l1.06 1.06M10.01 10.01l1.06 1.06M2.93 11.07l1.06-1.06M10.01 3.99l1.06-1.06" />
+      </svg>
+    ),
+  },
+];
+
+export default function Sidebar() {
+  const pathname = usePathname();
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-logo">
+        <svg className="sidebar-logo-icon" viewBox="0 0 28 28" fill="none">
+          <polygon
+            points="14,2 25,8 25,20 14,26 3,20 3,8"
+            stroke="#00e5ff"
+            strokeWidth="1.2"
+            fill="rgba(0,229,255,0.06)"
+          />
+          <polygon
+            points="14,7 20,10.5 20,17.5 14,21 8,17.5 8,10.5"
+            stroke="#00e5ff"
+            strokeWidth="0.8"
+            fill="rgba(0,229,255,0.04)"
+          />
+        </svg>
+        <span className="sidebar-wordmark">RESUMEBOT</span>
+        <span className="sidebar-subtitle">MISSION CONTROL</span>
+      </div>
+
+      <nav className="sidebar-nav">
+        {NAV.map(({ href, label, icon }) => {
+          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          return (
+            <Link key={href} href={href} className={`nav-item${active ? " active" : ""}`}>
+              {icon}
+              {label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="sidebar-footer">
+        <div className="user-chip">
+          <span className="pulse-dot" />
+          OPERATOR
+        </div>
+      </div>
+    </aside>
+  );
+}
