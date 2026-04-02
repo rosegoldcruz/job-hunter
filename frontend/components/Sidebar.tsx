@@ -2,6 +2,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
 const NAV = [
   {
     href: "/",
@@ -65,11 +70,11 @@ const NAV = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }: Props) {
   const pathname = usePathname();
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${isOpen ? " mobile-open" : ""}`}>
       <div className="sidebar-logo">
         <svg className="sidebar-logo-icon" viewBox="0 0 28 28" fill="none">
           <polygon
@@ -93,7 +98,12 @@ export default function Sidebar() {
         {NAV.map(({ href, label, icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
-            <Link key={href} href={href} className={`nav-item${active ? " active" : ""}`}>
+            <Link
+              key={href}
+              href={href}
+              className={`nav-item${active ? " active" : ""}`}
+              onClick={onClose}
+            >
               {icon}
               {label}
             </Link>
