@@ -13,6 +13,38 @@ Flow:
 8. Final approve from Telegram.
 9. Send only when a real contact email exists.
 
+## Running on Windows with Cloudflare Tunnel
+
+The dashboard is designed to run on an always-on local Windows machine
+(AEON-Optiplex) and be accessed remotely via Cloudflare Tunnel at:
+**https://jobs.aeoninvestmentstechnologies.com**
+
+**Quick start (double-click):**
+
+1. Double-click `start.bat` — opens FastAPI in one terminal, starts Next.js dev in the current window
+2. Frontend: http://localhost:3000
+3. API docs:  http://localhost:8000/docs
+4. Public (phone/remote): https://jobs.aeoninvestmentstechnologies.com
+
+**Production start (builds optimized bundle):**
+
+```bash
+bash start.sh
+```
+
+**Dev start (hot reload):**
+
+```bash
+bash start-dev.sh
+```
+
+> Note: Cloudflare Tunnel must be running as a Windows service on this machine.
+> The Next.js rewrite rule proxies all `/api/*` requests to FastAPI on port 8000
+> internally, so browser API calls always use relative URLs and work from any
+> device hitting the public domain.
+
+---
+
 ## Why this version is safer than the old one
 - No fake callback buttons.
 - No hardcoded hiring email.

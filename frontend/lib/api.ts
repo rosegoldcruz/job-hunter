@@ -1,4 +1,6 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Empty string = relative URLs — proxied to FastAPI via Next.js rewrites.
+// Set NEXT_PUBLIC_API_URL only if running the frontend on a separate host.
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export interface Job {
   id: number;
