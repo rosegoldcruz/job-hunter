@@ -46,6 +46,7 @@ class Settings:
     linkedin_keywords: list[str]
     craigslist_keywords: list[str]
     remote_keywords: list[str]
+    weworkremotely_keywords: list[str]
     user_agent: str
 
 
@@ -87,6 +88,10 @@ def get_settings() -> Settings:
         remote_keywords=_as_csv(
             os.getenv("REMOTE_KEYWORDS"),
             "python,api development,automation engineer,full stack developer,next.js,react,typescript,crm automation,marketing automation,solutions engineer",
+        ),
+        weworkremotely_keywords=_as_csv(
+            os.getenv("WEWORKREMOTELY_KEYWORDS"),
+            "python,automation,full stack,react,next.js,typescript,api,crm,marketing automation,solutions engineer",
         ),
         user_agent=(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

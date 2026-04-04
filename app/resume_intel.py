@@ -63,6 +63,7 @@ def default_source_queries(skills: list[str]) -> dict[str, list[str]]:
         "linkedin": ["solutions engineer", "technical operations"],
         "craigslist": ["website", "web developer", "automation"],
         "remote": ["full stack developer", "automation engineer"],
+        "weworkremotely": ["full stack", "automation", "python"],
     }
 
     if "crm automation" in skills:
@@ -70,6 +71,7 @@ def default_source_queries(skills: list[str]) -> dict[str, list[str]]:
         queries["linkedin"].extend(["revenue operations", "revops", "integrations engineer"])
         queries["craigslist"].extend(["crm", "funnels", "pipeline"])
         queries["remote"].extend(["crm automation", "marketing automation"])
+        queries["weworkremotely"].extend(["crm", "marketing automation"])
 
     if "telephony" in skills:
         queries["indeed"].extend(["lead routing", "sales automation"])
@@ -82,6 +84,7 @@ def default_source_queries(skills: list[str]) -> dict[str, list[str]]:
         queries["linkedin"].extend(["full stack developer", "next.js developer", "python engineer"])
         queries["craigslist"].extend(["frontend", "backend", "react", "next.js"])
         queries["remote"].extend(["next.js", "react", "typescript"])
+        queries["weworkremotely"].extend(["react", "next.js", "typescript"])
 
     if "python automation" in skills:
         queries["indeed"].extend(["python backend", "pipeline automation"])
@@ -94,6 +97,7 @@ def default_source_queries(skills: list[str]) -> dict[str, list[str]]:
         queries["linkedin"].extend(["revenue operations"])
         queries["craigslist"].extend(["sales", "marketing", "lead generation", "ads"])
         queries["remote"].extend(["solutions engineer"])
+        queries["weworkremotely"].extend(["solutions engineer"])
 
     return queries
 
@@ -119,6 +123,7 @@ def build_resume_profile(resume_path: Path, configured_queries: dict[str, list[s
         "linkedin": merge_queries(defaults["linkedin"], configured_queries.get("linkedin", [])),
         "craigslist": merge_queries(defaults["craigslist"], configured_queries.get("craigslist", [])),
         "remote": merge_queries(defaults["remote"], configured_queries.get("remote", [])),
+        "weworkremotely": merge_queries(defaults["weworkremotely"], configured_queries.get("weworkremotely", [])),
     }
     return {
         "resume_text": resume_text,
