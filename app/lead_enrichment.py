@@ -1,9 +1,9 @@
 """
 Lead enrichment pipeline.
 
-Reuses: extract_contact_email / EMAIL_RE from job_sources.py
-New:    TSV parser, DuckDuckGo search, contact page crawler, MX validation,
-        decision-maker name extraction.
+Search:  Brave Search via requests (no browser — fast, reliable)
+Crawl:   Playwright for JS-rendered sites (email extraction from full HTML + JS)
+Fallback: email pattern guessing (info@, contact@) validated by MX
 """
 from __future__ import annotations
 
@@ -12,14 +12,13 @@ import random
 import re
 import time
 from typing import Any
-from urllib.parse import urljoin, urlparse, parse_qs, quote_plus
+from urllib.parse import urljoin, urlparse, quote_plus
 
+import requests as req_lib
 from bs4 import BeautifulSoup
-from playwright.sync_api import Page
-
-from app.job_sources import extract_contact_email
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="[enrich] %(message)s")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -31,65 +30,90 @@ USER_AGENT = (
     "Chrome/138.0.0.0 Safari/537.36"
 )
 
+DEFAULT_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+}
+
 CONTACT_PATHS = [
     "/contact",
     "/contact-us",
     "/about",
     "/about-us",
     "/team",
-    "/staff",
     "/our-team",
-    "/people",
+    "/staff",
 ]
 
-# Domains to skip when evaluating search results
+# Directory/aggregator domains that are NOT the company's own website
 BAD_DOMAINS = [
-    "duckduckgo", "google", "bing", "yahoo",
-    "facebook", "instagram", "twitter", "x.com",
-    "yelp", "yellowpages", "bbb.org", "linkedin",
-    "indeed", "glassdoor", "wikipedia", "reddit",
-    "youtube", "zillow", "trulia", "realtor.com",
-    "apartments.com", "apartmentlist", "costar",
-    "loopnet", "zoominfo", "hoovers", "dnb.com",
-    "manta.com", "angieslist", "angi.com", "thumbtack",
-    "homeadvisor", "houzz",
+    "google", "bing", "yahoo", "duckduckgo", "brave.com", "search.brave",
+    "facebook", "instagram", "twitter", "x.com", "linkedin",
+    "yelp", "yellowpages", "bbb.org", "angi.com", "angieslist",
+    "thumbtack", "homeadvisor", "houzz", "porch.com",
+    "zillow", "trulia", "realtor.com", "apartments.com", "apartmentlist",
+    "costar", "loopnet", "allpropertymanagement",
+    "zoominfo", "hoovers", "dnb.com", "manta.com", "crunchbase",
+    "superpages", "whitepages", "spokeo", "beenverified",
+    "mapquest", "whodoyou", "customerlobby", "enrollbusiness",
+    "hub.biz", "bizapedia", "opencorporates",
+    "wikipedia", "reddit", "youtube", "nextdoor",
+    "simplifyem", "buildium", "appfolio", "propertyware",
 ]
 
-# Regex to detect an owner/decision-maker title near a name
-DECISION_MAKER_RE = re.compile(
-    r"([A-Z][a-z]+(?: [A-Z][a-z]+){1,2})"           # Proper-cased name (2-3 words)
-    r"[\s,|•\-–—]*"
-    r"(?:owner|founder|president|ceo|principal"
-    r"|property\s+manager|general\s+manager"
-    r"|broker|director|managing\s+member)",
-    re.IGNORECASE,
-)
-
-# Junk substrings that disqualify an email
+# Email addresses to discard
 JUNK_EMAIL_SUBSTRINGS = [
     "noreply", "no-reply", "do-not-reply", "donotreply",
     "example.com", "test.com", "@domain", "placeholder",
-    "your@", "email@email", "info@example",
+    "your@", "email@email", "john@doe", "sentry.io",
+    "wix.com", "squarespace.com", "cloudflare.com", "wordpress.com",
+    "support@", "abuse@", "admin@sendgrid",
 ]
 
+# Owner/decision-maker title keywords — also used to disqualify name words
+TITLE_WORDS_SET = {
+    "owner", "founder", "president", "ceo", "principal",
+    "manager", "broker", "director", "member", "designated", "agent",
+}
+
+# Common words that appear capitalized but are NOT person names
+NON_NAME_WORDS = {
+    "company", "contact", "about", "home", "services", "locations",
+    "team", "rent", "lease", "management", "property", "properties",
+    "real", "estate", "commercial", "residential", "office", "hours",
+    "more", "view", "learn", "read", "click", "here", "submit", "send",
+    "apply", "request", "schedule", "call", "email", "phone", "fax",
+    "hello", "welcome", "follow", "terms", "privacy", "policy",
+    "portfolio", "reviews", "testimonials", "resources", "blog", "news",
+    "maintenance", "tenant", "landlord", "vacancy", "pricing", "rates",
+}
+
+EMAIL_RE = re.compile(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", re.IGNORECASE)
+
+# Looks for "First Last, Title" — name words separated by SPACES only (not newlines)
+# so nav-menu text like "Company\n\nLocations\n\nRent" is never treated as a name
+DECISION_MAKER_RE = re.compile(
+    r"\b([A-Z][a-z]{1,20}(?: [A-Z][a-z]{1,20}){1,2})\b"   # space-only word sep
+    r"[ \t,\|\-–—]{0,8}"                                    # non-newline separator
+    r"\b(?:owner|founder|president|c\.?e\.?o\.?|principal|property\s+manager"
+    r"|general\s+manager|broker(?:\s+of\s+record)?"
+    r"|director|managing\s+member|managing\s+director)\b",
+    re.IGNORECASE,
+)
+
+# Email prefix guesses (tried in order)
+EMAIL_GUESS_PREFIXES = ["info", "contact", "office", "hello", "management", "pm"]
 
 # ---------------------------------------------------------------------------
 # TSV / smashed-format parser
 # ---------------------------------------------------------------------------
 
-# Matches phone numbers like (408) 913-1082 / 408-913-1082 / 4089131082
 PHONE_RE = re.compile(r"(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})")
-
-# All-caps state-header pattern (e.g. "ARIZONA", "NEW MEXICO")
 STATE_HEADER_RE = re.compile(r"^[A-Z][A-Z\s\-]{2,}$")
 
 
 def _split_company_city(value: str) -> tuple[str, str, bool]:
-    """
-    Split "Company Name, City" on the last comma.
-    Returns (company, city, ambiguous).
-    ambiguous=True when there is no comma — city cannot be determined.
-    """
     value = value.strip()
     if "," in value:
         idx = value.rfind(",")
@@ -113,114 +137,62 @@ def _is_column_header(text: str) -> bool:
 
 def parse_tsv_leads(tsv_text: str) -> list[dict[str, Any]]:
     """
-    Auto-detect format and parse into a list of lead dicts.
+    Auto-detect format and parse into lead dicts.
 
-    FORMAT 1 — Tab-separated (CTRL+SHIFT+V):
-        Company, City \\t Phone \\t Notes?
-        Blank lines between entries are normal.
-
-    FORMAT 2 — Smashed (CTRL+V, no tabs):
-        Company, City(phone)Company, City(phone)...
-        Phone number regex acts as the delimiter.
-
-    Both formats:
-    - ALL-CAPS lines with no phone = state header, attached to rows below
-    - Blank lines skipped
-    - ambiguous=True when no comma to split company/city
+    FORMAT 1 — Tab-separated (CTRL+SHIFT+V): Company, City [TAB] Phone
+    FORMAT 2 — Smashed (CTRL+V, no tabs): Company, City(phone)Company...
     """
     text = tsv_text.strip()
     if not text:
         return []
-
-    if "\t" in text:
-        return _parse_tab_format(text)
-    return _parse_smashed_format(text)
+    return _parse_tab_format(text) if "\t" in text else _parse_smashed_format(text)
 
 
 def _parse_tab_format(text: str) -> list[dict[str, Any]]:
     leads: list[dict[str, Any]] = []
     current_state = ""
-
     for raw in text.split("\n"):
         line = raw.rstrip("\r")
         cols = line.split("\t")
-
         if not any(c.strip() for c in cols):
             continue
-
         first = cols[0].strip()
         rest_empty = all(not c.strip() for c in cols[1:])
-
-        # State header
         if rest_empty and first and _is_state_header(first):
             current_state = first.title()
             continue
-
-        if _is_column_header(first):
+        if _is_column_header(first) or not first:
             continue
-
-        if not first:
-            continue
-
         phone = cols[1].strip() if len(cols) > 1 else ""
-        # Notes column intentionally skipped per spec
-
         company, city, ambiguous = _split_company_city(first)
-        leads.append({
-            "company": company,
-            "city": city,
-            "state": current_state,
-            "phone": phone,
-            "ambiguous": ambiguous,
-        })
-
+        leads.append({"company": company, "city": city, "state": current_state,
+                      "phone": phone, "ambiguous": ambiguous})
     return leads
 
 
 def _parse_smashed_format(text: str) -> list[dict[str, Any]]:
-    """
-    Parse smashed (no-tab) format by using phone number as the delimiter.
-    Handles multi-line input where state headers appear on their own lines.
-    """
     leads: list[dict[str, Any]] = []
     current_state = ""
-
-    lines = text.split("\n")
-
-    for raw in lines:
+    for raw in text.split("\n"):
         line = raw.rstrip("\r").strip()
         if not line:
             continue
-
-        # State header on its own line
         if _is_state_header(line) and not PHONE_RE.search(line):
             current_state = line.title()
             continue
-
         if _is_column_header(line):
             continue
-
-        # Split this line (or blob) on phone pattern
-        # PHONE_RE.split returns: [pre, phone, pre, phone, ..., post]
         parts = PHONE_RE.split(line)
         i = 0
         while i < len(parts):
             company_city = parts[i].strip()
             phone = parts[i + 1].strip() if i + 1 < len(parts) else ""
             i += 2
-
             if not company_city:
                 continue
-
             company, city, ambiguous = _split_company_city(company_city)
-            leads.append({
-                "company": company,
-                "city": city,
-                "state": current_state,
-                "phone": phone,
-                "ambiguous": ambiguous,
-            })
-
+            leads.append({"company": company, "city": city, "state": current_state,
+                          "phone": phone, "ambiguous": ambiguous})
     return leads
 
 
@@ -228,7 +200,7 @@ def _parse_smashed_format(text: str) -> list[dict[str, Any]]:
 # Utility helpers
 # ---------------------------------------------------------------------------
 
-def random_delay(min_s: float = 1.5, max_s: float = 4.0) -> None:
+def random_delay(min_s: float = 1.0, max_s: float = 3.0) -> None:
     time.sleep(random.uniform(min_s, max_s))
 
 
@@ -236,125 +208,163 @@ def _is_good_domain(url: str) -> bool:
     parsed = urlparse(url)
     if not parsed.netloc or not parsed.scheme.startswith("http"):
         return False
-    domain = parsed.netloc.lower().lstrip("www.")
+    domain = parsed.netloc.lower()
+    if domain.startswith("www."):
+        domain = domain[4:]
     return not any(bad in domain for bad in BAD_DOMAINS)
 
 
-def _is_valid_email(email: str) -> bool:
-    lower = email.lower()
-    return not any(j in lower for j in JUNK_EMAIL_SUBSTRINGS)
+def _clean_emails(raw_emails: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result = []
+    for e in raw_emails:
+        low = e.lower()
+        if any(j in low for j in JUNK_EMAIL_SUBSTRINGS):
+            continue
+        if low in seen:
+            continue
+        seen.add(low)
+        result.append(e)
+    return result
 
 
 # ---------------------------------------------------------------------------
-# DuckDuckGo company website search
+# Brave Search website finder  (requests only — no browser needed)
 # ---------------------------------------------------------------------------
 
 def search_company_website(
     company: str,
     city: str,
     state: str,
-    page: Page,
+    session: req_lib.Session,
 ) -> str | None:
     """
-    Search DuckDuckGo HTML interface for the company's official website.
-    Returns scheme://netloc or None.
+    Use Brave Search HTML (via plain requests) to find the company's
+    official website.  Returns scheme://netloc or None.
+    Retries once with a longer backoff on 429 rate-limit responses.
     """
-    query = f'"{company}" {city} {state} official site contact'
-    search_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+    query = f"{company} {city} {state} official website"
+    url = f"https://search.brave.com/search?q={quote_plus(query)}"
+    logger.info("Brave search: %s", query)
 
-    try:
-        page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
-        page.wait_for_timeout(random.randint(600, 1000))
-
-        result_links = page.locator("a.result__a").all()
-        for link in result_links[:8]:
-            href = link.get_attribute("href") or ""
-            # DuckDuckGo wraps real URLs in /l/?uddg=<encoded>
-            parsed = urlparse(href)
-            params = parse_qs(parsed.query)
-            actual = params.get("uddg", [""])[0]
-            if not actual:
-                # Try href directly
-                actual = href
-
-            p = urlparse(actual)
-            if not p.netloc:
+    for attempt in range(2):
+        try:
+            r = session.get(url, timeout=15)
+            if r.status_code == 429:
+                wait = 8 + attempt * 6 + random.uniform(0, 3)
+                logger.warning("  Brave rate-limited (429) — waiting %.1fs", wait)
+                time.sleep(wait)
                 continue
-            candidate = f"{p.scheme or 'https'}://{p.netloc}"
-            if _is_good_domain(candidate):
-                logger.info("Found website for %s: %s", company, candidate)
-                return candidate
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
 
-    except Exception as exc:
-        logger.warning("Website search failed for %s: %s", company, exc)
+            for a in soup.select("a[href]"):
+                href = a.get("href", "")
+                if not href.startswith("http"):
+                    continue
+                p = urlparse(href)
+                candidate = f"{p.scheme}://{p.netloc}"
+                if _is_good_domain(candidate):
+                    logger.info("  → website found: %s", candidate)
+                    return candidate
 
+            break  # No 429 — no results but don't retry
+
+        except req_lib.exceptions.HTTPError:
+            pass  # handled by status_code check above
+        except Exception as exc:
+            logger.warning("Brave search failed for %s: %s", company, exc)
+            break
+
+    logger.info("  → no website found for %s", company)
     return None
 
 
 # ---------------------------------------------------------------------------
-# Contact page crawler
+# Contact page crawler  (Playwright for JS-rendered sites)
 # ---------------------------------------------------------------------------
 
-def crawl_for_contact(website_url: str, page: Page) -> dict[str, Any]:
+def crawl_for_contact(website_url: str, page: Any) -> dict[str, Any]:
     """
-    Crawl homepage + common contact/about paths to extract email and
-    decision-maker name.
+    Crawl homepage + contact/about paths with Playwright.
+    Extracts email from: JS-evaluated mailto links, full HTML source,
+    rendered body text.  Falls back to email pattern guessing.
 
-    Returns dict with keys: email, contact_name, confidence (0-100).
+    Returns: {email, contact_name, confidence, guessed}
     """
     result: dict[str, Any] = {
         "email": None,
         "contact_name": None,
         "confidence": 0,
+        "guessed": False,
     }
     all_text = ""
+    pages_to_try = [website_url] + [urljoin(website_url, p) for p in CONTACT_PATHS]
 
-    pages_to_try = [website_url] + [
-        urljoin(website_url, p) for p in CONTACT_PATHS
-    ]
-
-    for url in pages_to_try[:5]:  # cap at 5 pages per lead
+    for url in pages_to_try[:5]:
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            page.wait_for_timeout(random.randint(500, 900))
-            text = page.locator("body").inner_text(timeout=3000) or ""
-            all_text += "\n" + text[:8000]
+            page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            page.wait_for_timeout(700)
 
-            # Check this page for email first — stop if found
-            email = extract_contact_email(text)
-            if email and _is_valid_email(email):
-                result["email"] = email
-                result["confidence"] += 50
-                logger.info("Email found on %s: %s", url, email)
+            # ── 1. JS-evaluated mailto: links (most reliable) ──────────────
+            mailto_hrefs: list[str] = page.evaluate(
+                "Array.from(document.querySelectorAll('a[href]'))"
+                ".map(a=>a.href)"
+                ".filter(h=>h.startsWith('mailto:'))"
+            )
+            for href in mailto_hrefs:
+                em = href.replace("mailto:", "").split("?")[0].strip()
+                cleaned = _clean_emails([em])
+                if cleaned:
+                    logger.info("  Email via mailto on %s: %s", url, cleaned[0])
+                    result["email"] = cleaned[0]
+                    result["confidence"] = 75
+                    break
+
+            if result["email"]:
+                break
+
+            # ── 2. Full page HTML scan (catches obfuscated/attr emails) ────
+            html = page.content()
+            emails = _clean_emails(EMAIL_RE.findall(html))
+            if emails:
+                logger.info("  Email via HTML scan on %s: %s", url, emails[0])
+                result["email"] = emails[0]
+                result["confidence"] = 60
+                break
+
+            # ── 3. Rendered body text ───────────────────────────────────────
+            text = page.locator("body").inner_text(timeout=3000) or ""
+            all_text += "\n" + text
+            emails = _clean_emails(EMAIL_RE.findall(text))
+            if emails:
+                logger.info("  Email via body text on %s: %s", url, emails[0])
+                result["email"] = emails[0]
+                result["confidence"] = 55
                 break
 
         except Exception as exc:
-            logger.debug("Crawl page failed %s: %s", url, exc)
+            logger.debug("  Crawl page failed %s: %s", url, exc)
 
-        random_delay(0.8, 2.0)
+        random_delay(0.5, 1.5)
 
-    # Also scan mailto: links across the page
+    # ── 4. Email guess fallback (info@, contact@, ...) ──────────────────────
     if not result["email"]:
-        try:
-            page.goto(website_url, wait_until="domcontentloaded", timeout=15000)
-            mailto_links = page.locator("a[href^='mailto:']").all()
-            for ml in mailto_links[:5]:
-                href = ml.get_attribute("href") or ""
-                email = href.replace("mailto:", "").split("?")[0].strip()
-                if email and _is_valid_email(email):
-                    result["email"] = email
-                    result["confidence"] += 40
-                    break
-        except Exception:
-            pass
+        domain = urlparse(website_url).netloc.lstrip("www.")
+        guessed = _guess_email(domain)
+        if guessed:
+            logger.info("  Email guessed for %s: %s", domain, guessed)
+            result["email"] = guessed
+            result["confidence"] = 20
+            result["guessed"] = True
 
-    # Decision-maker name extraction
+    # ── 5. Decision-maker name ─────────────────────────────────────────────
     name = find_decision_maker(all_text)
     if name:
+        logger.info("  Contact name found: %s", name)
         result["contact_name"] = name
-        result["confidence"] += 25
+        result["confidence"] = min(result["confidence"] + 15, 100)
 
-    result["confidence"] = min(result["confidence"], 100)
     return result
 
 
@@ -364,19 +374,38 @@ def crawl_for_contact(website_url: str, page: Page) -> dict[str, Any]:
 
 def find_decision_maker(text: str) -> str | None:
     """
-    Look for a proper name immediately adjacent to an owner/manager title.
-    Returns "First Last" string or None.
+    Look for 'First Last — Title' patterns. Validates each candidate to
+    ensure no word is a title/junk word and each word is properly cased.
     """
-    matches = DECISION_MAKER_RE.findall(text)
-    for raw in matches:
+    for raw in DECISION_MAKER_RE.findall(text):
         name = raw.strip()
         words = name.split()
-        # Sanity: 2-3 words, each capitalized, no all-caps (abbreviations)
-        if (
-            2 <= len(words) <= 3
-            and all(w[0].isupper() and not w.isupper() for w in words)
-        ):
-            return name
+        if not (2 <= len(words) <= 3):
+            continue
+        # Each word: first char upper, rest all lower (no mixed-case abbrev)
+        if not all(len(w) >= 2 and w[0].isupper() and w[1:].islower() for w in words):
+            continue
+        # No word is a known title or non-name word
+        if any(w.lower() in TITLE_WORDS_SET or w.lower() in NON_NAME_WORDS for w in words):
+            continue
+        return name
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Email guess fallback
+# ---------------------------------------------------------------------------
+
+def _guess_email(domain: str) -> str | None:
+    """
+    Try info@domain, contact@domain etc.
+    Only proceeds if domain has MX records (proves it accepts email).
+    Returns the first valid-format guess, or None.
+    """
+    if not validate_email_mx(f"probe@{domain}"):
+        return None
+    for prefix in EMAIL_GUESS_PREFIXES:
+        return f"{prefix}@{domain}"
     return None
 
 
@@ -385,26 +414,21 @@ def find_decision_maker(text: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def validate_email_mx(email: str) -> bool:
-    """
-    Check that the email's domain has MX records.
-    Falls back to A-record lookup if dnspython is unavailable.
-    """
+    """Check that the email domain has MX (or A) records."""
     try:
         domain = email.split("@", 1)[1]
     except IndexError:
         return False
 
-    # Try dnspython first (proper MX check)
     try:
         import dns.resolver  # type: ignore
-        answers = dns.resolver.resolve(domain, "MX", lifetime=5)
-        return len(list(answers)) > 0
+        dns.resolver.resolve(domain, "MX", lifetime=5)
+        return True
     except ImportError:
         pass
     except Exception:
         return False
 
-    # Fallback: plain socket A record lookup
     try:
         import socket
         socket.setdefaulttimeout(5)

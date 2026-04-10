@@ -372,11 +372,13 @@ async def start_enrichment(body: dict = Body(...)):
         validate_email_mx,
         random_delay,
         USER_AGENT,
+        DEFAULT_HEADERS,
     )
     from app.db import (
         init_leads_db, insert_lead, clear_leads,
         get_lead, update_lead,
     )
+    import requests as req_lib
     from playwright.sync_api import sync_playwright
 
     tsv = body.get("tsv", "")
@@ -407,48 +409,52 @@ async def start_enrichment(body: dict = Body(...)):
         })
 
     def _run():
+        print(f"[enrich] Starting enrichment for {len(lead_ids)} leads")
+        # One requests.Session for all Brave searches (fast, no browser)
+        session = req_lib.Session()
+        session.headers.update(DEFAULT_HEADERS)
+
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(headless=True)
                 ctx = browser.new_context(
                     user_agent=USER_AGENT,
                     viewport={"width": 1280, "height": 800},
-                    extra_http_headers={
-                        "Accept-Language": "en-US,en;q=0.9",
-                        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-                    },
                 )
                 page = ctx.new_page()
-                # Basic stealth: mask navigator.webdriver
                 page.add_init_script(
                     "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
                     "window.chrome={runtime:{}};"
                 )
 
-                for lead_id in lead_ids:
+                for i, lead_id in enumerate(lead_ids, 1):
                     try:
                         row = get_lead(db, lead_id)
                         if row is None:
                             continue
                         lead = dict(row)
+                        company = lead["company"]
+                        print(f"[enrich] [{i}/{len(lead_ids)}] Processing: {company}")
                         update_lead(db, lead_id, status="in_progress")
 
                         updates: dict = {}
 
-                        # Step 1: find website
-                        random_delay(0.8, 2.0)
+                        # ── Step 1: Brave Search for website (requests, no browser) ──
+                        # 3-6s between searches keeps us under Brave's rate limit
+                        random_delay(3.0, 6.0)
                         website = search_company_website(
-                            lead["company"],
+                            company,
                             lead.get("city", ""),
                             lead.get("state", ""),
-                            page,
+                            session,
                         )
 
                         if website:
                             updates["website"] = website
+                            print(f"[enrich]   website: {website}")
 
-                            # Step 2: crawl for email + contact
-                            random_delay(1.5, 3.5)
+                            # ── Step 2: Playwright crawl for email + contact ──────────
+                            random_delay(1.0, 2.5)
                             contact = crawl_for_contact(website, page)
 
                             if contact["email"]:
@@ -456,17 +462,25 @@ async def start_enrichment(body: dict = Body(...)):
                                 updates["email"] = contact["email"]
                                 base_conf = contact["confidence"]
                                 updates["confidence"] = base_conf if mx_ok else max(base_conf - 20, 0)
+                                guessed = " (guessed)" if contact.get("guessed") else ""
+                                print(f"[enrich]   email{guessed}: {contact['email']} conf={updates['confidence']}")
+                            else:
+                                print(f"[enrich]   no email found on {website}")
 
                             if contact["contact_name"]:
                                 updates["contact_name"] = contact["contact_name"]
+                                print(f"[enrich]   contact: {contact['contact_name']}")
 
                             updates["status"] = "found" if contact.get("email") else "not_found"
                         else:
+                            print(f"[enrich]   no website found")
                             updates["status"] = "not_found"
 
                         update_lead(db, lead_id, **updates)
+                        print(f"[enrich]   → {updates['status']}")
 
                     except Exception as exc:
+                        print(f"[enrich]   ERROR on lead {lead_id}: {exc}")
                         _enrich_state["last_error"] = str(exc)
                         try:
                             update_lead(db, lead_id, status="not_found", error=str(exc)[:500])
@@ -477,9 +491,15 @@ async def start_enrichment(body: dict = Body(...)):
                             _enrich_state["completed"] += 1
 
                 browser.close()
+
+        except Exception as exc:
+            print(f"[enrich] FATAL: {exc}")
+            _enrich_state["last_error"] = str(exc)
         finally:
+            session.close()
             with _enrich_lock:
                 _enrich_state["running"] = False
+            print("[enrich] Done.")
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started", "total": len(lead_ids)}
