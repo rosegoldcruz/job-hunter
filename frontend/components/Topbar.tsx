@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { api, Stats } from "@/lib/api";
+import { api, EnrichmentStatus } from "@/lib/api";
 import { useMobileNav } from "./MobileSidebarContext";
 
 interface Props {
@@ -11,8 +11,7 @@ interface Props {
 
 export default function Topbar({ page, search, onSearch }: Props) {
   const [clock, setClock] = useState("");
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [scraping, setScraping] = useState(false);
+  const [status, setStatus] = useState<EnrichmentStatus | null>(null);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const { toggle } = useMobileNav();
@@ -30,24 +29,12 @@ export default function Topbar({ page, search, onSearch }: Props) {
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const s = await api.getStats();
-        setStats(s);
-        setScraping(s.scraper_running);
-      } catch {}
+      try { setStatus(await api.enrichmentStatus()); } catch {}
     };
     load();
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
   }, []);
-
-  const runScrape = async () => {
-    if (scraping) return;
-    setScraping(true);
-    try {
-      await api.triggerScrape();
-    } catch {}
-  };
 
   const openSearch = () => {
     setSearchExpanded(true);
@@ -73,9 +60,9 @@ export default function Topbar({ page, search, onSearch }: Props) {
         </svg>
       </button>
 
-      {/* ── Breadcrumb — hidden when mobile search is expanded ───── */}
+      {/* ── Breadcrumb ───────────────────────────────────────────── */}
       <div className={`breadcrumb${searchExpanded ? " hide-mobile" : ""}`}>
-        RESUMEBOT / <span>{page.toUpperCase()}</span>
+        LEAD ENRICHER / <span>{page.toUpperCase()}</span>
       </div>
 
       {/* ── Desktop search ──────────────────────────────────────── */}
@@ -83,7 +70,7 @@ export default function Topbar({ page, search, onSearch }: Props) {
         <input
           type="text"
           className="search-input"
-          placeholder="SEARCH COMPANY / TITLE..."
+          placeholder="SEARCH LEADS..."
           value={search}
           onChange={(e) => onSearch(e.target.value)}
         />
@@ -111,9 +98,9 @@ export default function Topbar({ page, search, onSearch }: Props) {
 
       {/* ── Right side ───────────────────────────────────────────── */}
       <div className={`topbar-right${searchExpanded ? " hide-mobile" : ""}`}>
-        {stats && (
+        {status && status.total > 0 && (
           <div className="topbar-stats">
-            {stats.new} NEW · {stats.approved} PENDING · {stats.applied} SENT
+            {status.found} FOUND · {status.not_found} MISSED · {status.total} TOTAL
           </div>
         )}
 
@@ -128,15 +115,6 @@ export default function Topbar({ page, search, onSearch }: Props) {
             <circle cx="6.5" cy="6.5" r="4.5" />
             <path d="M10.5 10.5L14 14" />
           </svg>
-        </button>
-
-        <button
-          className="btn btn-magenta topbar-scrape-btn"
-          onClick={runScrape}
-          disabled={scraping}
-          data-interactive
-        >
-          <span>{scraping ? "RUNNING..." : "RUN SCRAPE"}</span>
         </button>
 
         <div className="topbar-clock">{clock}</div>

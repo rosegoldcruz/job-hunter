@@ -7,7 +7,9 @@ const SESSION_ID = Array.from({ length: 8 }, () =>
 ).join("");
 
 export default function StatusBar() {
-  const [scraping, setScraping] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [found, setFound] = useState(0);
+  const [total, setTotal] = useState(0);
   const [clock, setClock] = useState("");
 
   useEffect(() => {
@@ -24,8 +26,10 @@ export default function StatusBar() {
   useEffect(() => {
     const poll = async () => {
       try {
-        const s = await api.scrapeStatus();
-        setScraping(s.running);
+        const s = await api.enrichmentStatus();
+        setEnriching(s.enriching);
+        setFound(s.found);
+        setTotal(s.total);
       } catch {}
     };
     poll();
@@ -43,11 +47,18 @@ export default function StatusBar() {
       <div className="statusbar-divider" />
 
       <div className="statusbar-segment">
-        {scraping ? (
-          <span className="status-running">SCRAPER: RUNNING...</span>
+        {enriching ? (
+          <span className="status-running">ENRICHER: RUNNING...</span>
         ) : (
-          <span>SCRAPER: IDLE</span>
+          <span>ENRICHER: IDLE</span>
         )}
+      </div>
+
+      <div className="statusbar-divider" />
+
+      <div className="statusbar-segment">
+        FOUND: <span style={{ color: "var(--success)", marginLeft: 4 }}>{found}</span>
+        {total > 0 && <span style={{ color: "var(--text-dim)" }}>/{total}</span>}
       </div>
 
       <div className="statusbar-divider" />

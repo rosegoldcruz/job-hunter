@@ -11,9 +11,9 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # ---------------------------------------------------------------------------
 # Lazy settings helper — returns None if env is not fully configured
@@ -43,6 +43,18 @@ def _require_settings():
 
 _scraper_lock = threading.Lock()
 _scraper_state: dict[str, Any] = {"running": False, "last_result": None, "last_error": None}
+
+# ---------------------------------------------------------------------------
+# Lead enrichment state (module-level, single process)
+# ---------------------------------------------------------------------------
+
+_enrich_lock = threading.Lock()
+_enrich_state: dict[str, Any] = {
+    "running": False,
+    "total": 0,
+    "completed": 0,
+    "last_error": None,
+}
 
 
 def _get_db_path() -> Path:
@@ -79,6 +91,8 @@ app.add_middleware(
 async def on_startup():
     try:
         _ensure_db()
+        from app.db import init_leads_db
+        init_leads_db(_get_db_path())
     except Exception as exc:
         print(f"[startup] DB init skipped: {exc}")
 
@@ -326,6 +340,229 @@ async def upload_resume(file: UploadFile = File(...)):
         pass
 
     return {"status": "uploaded", "path": str(dest), "filename": file.filename}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/resume  (current resume info)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# POST /api/leads/parse   — preview only, no DB write
+# ---------------------------------------------------------------------------
+
+@app.post("/api/leads/parse")
+async def parse_leads_preview(body: dict = Body(...)):
+    from app.lead_enrichment import parse_tsv_leads
+    tsv = body.get("tsv", "")
+    if not tsv.strip():
+        return []
+    return parse_tsv_leads(tsv)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/leads/enrich  — store leads + kick off enrichment thread
+# ---------------------------------------------------------------------------
+
+@app.post("/api/leads/enrich")
+async def start_enrichment(body: dict = Body(...)):
+    from app.lead_enrichment import (
+        parse_tsv_leads,
+        search_company_website,
+        crawl_for_contact,
+        validate_email_mx,
+        random_delay,
+        USER_AGENT,
+    )
+    from app.db import (
+        init_leads_db, insert_lead, clear_leads,
+        get_lead, update_lead,
+    )
+    from playwright.sync_api import sync_playwright
+
+    tsv = body.get("tsv", "")
+    if not tsv.strip():
+        raise HTTPException(status_code=400, detail="No TSV data provided")
+
+    db = _get_db_path()
+    init_leads_db(db)
+
+    leads = parse_tsv_leads(tsv)
+    if not leads:
+        raise HTTPException(status_code=400, detail="No valid leads found in input")
+
+    with _enrich_lock:
+        if _enrich_state["running"]:
+            return JSONResponse({"status": "already_running"}, status_code=202)
+
+    # Wipe previous batch and insert fresh
+    clear_leads(db)
+    lead_ids: list[int] = [insert_lead(db, lead) for lead in leads]
+
+    with _enrich_lock:
+        _enrich_state.update({
+            "running": True,
+            "total": len(lead_ids),
+            "completed": 0,
+            "last_error": None,
+        })
+
+    def _run():
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=True)
+                ctx = browser.new_context(
+                    user_agent=USER_AGENT,
+                    viewport={"width": 1280, "height": 800},
+                    extra_http_headers={
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+                    },
+                )
+                page = ctx.new_page()
+                # Basic stealth: mask navigator.webdriver
+                page.add_init_script(
+                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+                    "window.chrome={runtime:{}};"
+                )
+
+                for lead_id in lead_ids:
+                    try:
+                        row = get_lead(db, lead_id)
+                        if row is None:
+                            continue
+                        lead = dict(row)
+                        update_lead(db, lead_id, status="in_progress")
+
+                        updates: dict = {}
+
+                        # Step 1: find website
+                        random_delay(0.8, 2.0)
+                        website = search_company_website(
+                            lead["company"],
+                            lead.get("city", ""),
+                            lead.get("state", ""),
+                            page,
+                        )
+
+                        if website:
+                            updates["website"] = website
+
+                            # Step 2: crawl for email + contact
+                            random_delay(1.5, 3.5)
+                            contact = crawl_for_contact(website, page)
+
+                            if contact["email"]:
+                                mx_ok = validate_email_mx(contact["email"])
+                                updates["email"] = contact["email"]
+                                base_conf = contact["confidence"]
+                                updates["confidence"] = base_conf if mx_ok else max(base_conf - 20, 0)
+
+                            if contact["contact_name"]:
+                                updates["contact_name"] = contact["contact_name"]
+
+                            updates["status"] = "found" if contact.get("email") else "not_found"
+                        else:
+                            updates["status"] = "not_found"
+
+                        update_lead(db, lead_id, **updates)
+
+                    except Exception as exc:
+                        _enrich_state["last_error"] = str(exc)
+                        try:
+                            update_lead(db, lead_id, status="not_found", error=str(exc)[:500])
+                        except Exception:
+                            pass
+                    finally:
+                        with _enrich_lock:
+                            _enrich_state["completed"] += 1
+
+                browser.close()
+        finally:
+            with _enrich_lock:
+                _enrich_state["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started", "total": len(lead_ids)}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/leads
+# ---------------------------------------------------------------------------
+
+@app.get("/api/leads")
+async def get_leads(status: str | None = Query(default=None)):
+    from app.db import list_leads, init_leads_db
+    db = _get_db_path()
+    init_leads_db(db)
+    rows = list_leads(db, status=status)
+    return [_row_to_dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# GET /api/leads/enrich/status
+# ---------------------------------------------------------------------------
+
+@app.get("/api/leads/enrich/status")
+async def enrichment_status():
+    from app.db import lead_stats, init_leads_db
+    db = _get_db_path()
+    init_leads_db(db)
+    counts = lead_stats(db)
+    return {
+        **counts,
+        "enriching": _enrich_state["running"],
+        "progress_total": _enrich_state["total"],
+        "progress_completed": _enrich_state["completed"],
+        "last_error": _enrich_state["last_error"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/leads/export  — CSV download
+# ---------------------------------------------------------------------------
+
+@app.get("/api/leads/export")
+async def export_leads_csv():
+    import csv
+    import io
+    from app.db import list_leads, init_leads_db
+
+    db = _get_db_path()
+    init_leads_db(db)
+    rows = list_leads(db)
+
+    buf = io.StringIO()
+    fieldnames = [
+        "id", "company", "city", "state", "phone",
+        "website", "email", "contact_name", "confidence",
+        "status", "ambiguous",
+    ]
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(dict(row))
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=leads_enriched.csv"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/leads  — clear all leads
+# ---------------------------------------------------------------------------
+
+@app.delete("/api/leads")
+async def delete_all_leads():
+    from app.db import clear_leads, init_leads_db
+    db = _get_db_path()
+    init_leads_db(db)
+    clear_leads(db)
+    with _enrich_lock:
+        _enrich_state.update({"running": False, "total": 0, "completed": 0, "last_error": None})
+    return {"status": "cleared"}
 
 
 # ---------------------------------------------------------------------------

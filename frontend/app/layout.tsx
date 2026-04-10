@@ -6,8 +6,8 @@ import ClientProviders from "@/components/ClientProviders";
 import StatusBar from "@/components/StatusBar";
 
 export const metadata: Metadata = {
-  title: "RESUMEBOT — Mission Control",
-  description: "Personal job hunting dashboard",
+  title: "LEAD ENRICHMENT — Mission Control",
+  description: "Lead enrichment and contact data pipeline",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
