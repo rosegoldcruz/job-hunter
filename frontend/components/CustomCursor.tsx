@@ -1,11 +1,24 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function CustomCursor() {
   const outerRef = useRef<HTMLDivElement>(null);
   const dotRef = useRef<HTMLDivElement>(null);
+  const [isTouch, setIsTouch] = useState(true); // default hidden until we confirm pointer device
 
   useEffect(() => {
+    // Only show custom cursor on fine-pointer (mouse) devices
+    const mq = window.matchMedia("(pointer: fine)");
+    setIsTouch(!mq.matches);
+
+    const onChange = (e: MediaQueryListEvent) => setIsTouch(!e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (isTouch) return;
+
     const outer = outerRef.current;
     const dot = dotRef.current;
     if (!outer || !dot) return;
@@ -52,7 +65,9 @@ export default function CustomCursor() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseover", onOver);
     };
-  }, []);
+  }, [isTouch]);
+
+  if (isTouch) return null;
 
   return (
     <>

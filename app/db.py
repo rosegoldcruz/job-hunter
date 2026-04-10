@@ -229,6 +229,113 @@ def record_event(database_path: Path, event_type: str, event_value: str, job_id:
         )
 
 
+# ===========================================================================
+# Leads — enrichment tool
+# ===========================================================================
+
+def init_leads_db(database_path: Path) -> None:
+    with get_connection(database_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS leads (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                company       TEXT    NOT NULL,
+                city          TEXT    NOT NULL DEFAULT '',
+                state         TEXT    NOT NULL DEFAULT '',
+                phone         TEXT    NOT NULL DEFAULT '',
+                website       TEXT,
+                email         TEXT,
+                contact_name  TEXT,
+                confidence    INTEGER NOT NULL DEFAULT 0,
+                status        TEXT    NOT NULL DEFAULT 'pending',
+                ambiguous     INTEGER NOT NULL DEFAULT 0,
+                error         TEXT,
+                created_at    TEXT    NOT NULL,
+                updated_at    TEXT    NOT NULL
+            );
+            """
+        )
+
+
+def insert_lead(database_path: Path, lead: dict[str, Any]) -> int:
+    now = utc_now()
+    with get_connection(database_path) as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO leads
+                (company, city, state, phone, ambiguous, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+            """,
+            (
+                lead.get("company", ""),
+                lead.get("city", ""),
+                lead.get("state", ""),
+                lead.get("phone", ""),
+                1 if lead.get("ambiguous") else 0,
+                now,
+                now,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def get_lead(database_path: Path, lead_id: int) -> sqlite3.Row | None:
+    with get_connection(database_path) as conn:
+        return conn.execute(
+            "SELECT * FROM leads WHERE id = ?", (lead_id,)
+        ).fetchone()
+
+
+def list_leads(
+    database_path: Path,
+    status: str | None = None,
+) -> list[sqlite3.Row]:
+    with get_connection(database_path) as conn:
+        if status:
+            return conn.execute(
+                "SELECT * FROM leads WHERE status = ? ORDER BY id",
+                (status,),
+            ).fetchall()
+        return conn.execute("SELECT * FROM leads ORDER BY id").fetchall()
+
+
+def update_lead(database_path: Path, lead_id: int, **fields: Any) -> None:
+    if not fields:
+        return
+    fields["updated_at"] = utc_now()
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [lead_id]
+    with get_connection(database_path) as conn:
+        conn.execute(
+            f"UPDATE leads SET {set_clause} WHERE id = ?", values
+        )
+
+
+def clear_leads(database_path: Path) -> None:
+    with get_connection(database_path) as conn:
+        conn.execute("DELETE FROM leads")
+
+
+def lead_stats(database_path: Path) -> dict[str, int]:
+    with get_connection(database_path) as conn:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) AS total FROM leads GROUP BY status"
+        ).fetchall()
+    payload = {row["status"]: int(row["total"]) for row in rows}
+    total = sum(payload.values())
+    return {
+        "total": total,
+        "pending": payload.get("pending", 0),
+        "in_progress": payload.get("in_progress", 0),
+        "found": payload.get("found", 0),
+        "not_found": payload.get("not_found", 0),
+    }
+
+
+# ===========================================================================
+# Jobs — original schema below
+# ===========================================================================
+
 def stats(database_path: Path) -> dict[str, int]:
     with get_connection(database_path) as conn:
         rows = conn.execute(

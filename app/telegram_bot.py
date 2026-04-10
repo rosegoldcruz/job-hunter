@@ -78,6 +78,7 @@ def configured_queries(settings) -> dict[str, list[str]]:
         "linkedin": settings.linkedin_keywords,
         "craigslist": settings.craigslist_keywords,
         "remote": settings.remote_keywords,
+        "weworkremotely": settings.weworkremotely_keywords,
     }
 
 

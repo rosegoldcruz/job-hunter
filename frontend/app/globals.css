@@ -824,3 +824,671 @@ body::after {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+/* ── Hamburger button (hidden on desktop) ────────────────────────────── */
+.hamburger-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.hamburger-btn:hover { color: var(--accent); }
+
+/* ── Topbar search icon (hidden on desktop) ──────────────────────────── */
+.topbar-search-icon {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.topbar-search-icon:hover { color: var(--accent); }
+
+/* ── Mobile search overlay (hidden on desktop) ───────────────────────── */
+.mobile-search-overlay {
+  display: none;
+}
+
+/* ── Sidebar backdrop (hidden on desktop, shown via JS on mobile) ─────── */
+.sidebar-backdrop {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE — max-width: 767px
+   All desktop styles above are preserved exactly. Only additions below.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+
+  /* Restore native cursor on touch devices */
+  * { cursor: auto !important; }
+
+  /* ── Layout: remove sidebar column, single-column grid ── */
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 54px 1fr 34px;
+    grid-template-areas:
+      "topbar"
+      "main"
+      "statusbar";
+  }
+
+  /* ── Sidebar: slide-in fixed drawer ─────────────────────── */
+  .sidebar {
+    grid-area: unset;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Sidebar backdrop: fixed overlay behind drawer */
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 4, 8, 0.78);
+    z-index: 999;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+
+  /* Nav items: taller touch targets */
+  .nav-item {
+    padding: 14px 16px;
+    min-height: 52px;
+  }
+
+  /* ── Topbar: mobile layout ───────────────────────────────── */
+  .topbar {
+    padding: 0 8px 0 4px;
+    gap: 6px;
+    position: relative;
+  }
+
+  /* Show hamburger */
+  .hamburger-btn {
+    display: flex;
+  }
+
+  /* Hide desktop search box */
+  .topbar-search {
+    display: none;
+  }
+
+  /* Hide stats and clock */
+  .topbar-stats {
+    display: none;
+  }
+
+  .topbar-clock {
+    display: none;
+  }
+
+  /* Show search icon button */
+  .topbar-search-icon {
+    display: flex;
+  }
+
+  /* Scrape button: shorter label padding on mobile */
+  .topbar-scrape-btn {
+    padding: 7px 10px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    min-height: 44px;
+  }
+
+  /* Mobile search overlay: full-width bar in topbar */
+  .mobile-search-overlay {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background: var(--bg2);
+    padding: 0 12px;
+    z-index: 10;
+    border-bottom: 1px solid var(--border-hot);
+  }
+
+  .mobile-search-input {
+    flex: 1;
+    clip-path: none;
+    border: none;
+    border-bottom: 1px solid var(--border-hot);
+    background: transparent;
+    padding: 6px 4px;
+    font-size: 14px;
+  }
+
+  .mobile-search-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+
+  /* Hide breadcrumb or topbar-right when mobile search is open */
+  .hide-mobile {
+    display: none !important;
+  }
+
+  /* ── Main content: adjusted padding ─────────────────────── */
+  .main-content {
+    padding: 16px 12px 20px;
+  }
+
+  /* ── Page header ─────────────────────────────────────────── */
+  .page-title {
+    font-size: 18px;
+  }
+
+  /* ── Metrics: 2×2 grid ───────────────────────────────────── */
+  .metrics-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .metric-value {
+    font-size: 22px;
+  }
+
+  /* ── Filter chips: larger touch targets ─────────────────── */
+  .filter-chip {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 14px;
+  }
+
+  /* ── Job cards ───────────────────────────────────────────── */
+  .job-card-body {
+    padding: 12px;
+  }
+
+  /* Action buttons: min 48px height, stack below 420px */
+  .job-actions {
+    gap: 8px;
+  }
+
+  .job-actions .btn {
+    min-height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+  }
+
+  /* Packet email row: stack vertically */
+  .packet-email-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .packet-email-row .btn {
+    min-height: 48px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ── Pipeline: horizontal snap scroll ───────────────────── */
+  .pipeline-grid {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px;
+    height: calc(100vh - 106px);
+    padding-bottom: 4px;
+    /* Remove grid sizing */
+    grid-template-columns: unset;
+  }
+
+  .pipeline-col {
+    flex: 0 0 80vw;
+    min-width: 80vw;
+    max-width: 80vw;
+    scroll-snap-align: start;
+    /* clip-path interferes with overflow scroll on mobile */
+    clip-path: none;
+    border-radius: 2px;
+  }
+
+  /* ── Resume: full width ──────────────────────────────────── */
+  .resume-card {
+    max-width: 100%;
+  }
+
+  .dropzone {
+    max-width: 100%;
+    padding: 36px 16px;
+    clip-path: none;
+    border-radius: 2px;
+  }
+
+  /* ── Status bar: minimal — dot + NOMINAL only ────────────── */
+  .statusbar {
+    padding: 0 12px;
+  }
+
+  .statusbar-segment:not(:first-child) {
+    display: none;
+  }
+
+  .statusbar-divider {
+    display: none;
+  }
+
+  /* ── Global touch targets ────────────────────────────────── */
+  button,
+  a.btn,
+  a.nav-item {
+    min-height: 44px;
+  }
+
+  /* ── Packet panel: more room on mobile ───────────────────── */
+  .packet-panel.open {
+    max-height: 1000px;
+  }
+
+  .packet-cover {
+    max-height: 220px;
+    font-size: 11px;
+  }
+}
+
+/* ── Very small screens (< 420px) — stack job action buttons ── */
+@media (max-width: 419px) {
+  .job-actions {
+    flex-direction: column;
+  }
+
+  .job-actions .btn {
+    width: 100%;
+  }
+
+  .topbar-scrape-btn {
+    font-size: 9px;
+    padding: 6px 8px;
+  }
+}
+
+/* ── iOS safe area insets ────────────────────────────────────── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  @media (max-width: 767px) {
+    .statusbar {
+      padding-bottom: env(safe-area-inset-bottom);
+      height: calc(34px + env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   LEAD ENRICHMENT UI
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Paste instructions box ──────────────────────────────────── */
+.lead-input-section {
+  max-width: 900px;
+}
+
+.paste-instructions {
+  background: var(--bg2);
+  border: 1px solid var(--border-hot);
+  clip-path: var(--clip-lg);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  position: relative;
+}
+
+.paste-instructions::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 2px; height: 14px;
+  background: var(--accent2);
+}
+
+.paste-instructions-title {
+  font-family: var(--font-head);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.15em;
+  margin-bottom: 12px;
+}
+
+.paste-steps {
+  list-style: decimal;
+  padding-left: 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  line-height: 2;
+  margin-bottom: 12px;
+}
+
+.paste-steps li + li {
+  margin-top: 0;
+}
+
+.paste-warning {
+  background: rgba(255, 184, 0, 0.08);
+  border: 1px solid rgba(255, 184, 0, 0.3);
+  clip-path: var(--clip-sm);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--warn);
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.paste-format-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+kbd {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border-hot);
+  color: var(--accent);
+  padding: 1px 5px;
+  clip-path: var(--clip-pill);
+  letter-spacing: 0.05em;
+}
+
+/* ── Paste textarea ───────────────────────────────────────────── */
+.lead-paste-area {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 14px;
+  clip-path: var(--clip-lg);
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.15s;
+  margin-bottom: 0;
+}
+
+.lead-paste-area::placeholder {
+  color: var(--text-dim);
+}
+
+.lead-paste-area:focus {
+  border-color: var(--border-hot);
+}
+
+/* ── Preview section ─────────────────────────────────────────── */
+.preview-section {
+  margin-top: 16px;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.preview-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.preview-warn-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--warn);
+  background: rgba(255, 184, 0, 0.1);
+  border: 1px solid rgba(255, 184, 0, 0.3);
+  padding: 2px 8px;
+  clip-path: var(--clip-pill);
+}
+
+/* ── Launch button ───────────────────────────────────────────── */
+.launch-row {
+  margin-top: 16px;
+}
+
+.btn-enrich {
+  border-color: var(--accent2);
+  color: var(--accent2);
+  font-size: 12px;
+  padding: 10px 24px;
+}
+
+.btn-enrich::before {
+  background: var(--accent2);
+}
+
+.btn-enrich:hover {
+  color: #fff;
+}
+
+/* ── Results section ─────────────────────────────────────────── */
+.results-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Enrichment progress bar ─────────────────────────────────── */
+.enrich-progress-wrap {
+  margin-bottom: 20px;
+}
+
+.enrich-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.enrich-progress-track {
+  height: 4px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.enrich-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  transition: width 0.4s ease;
+  box-shadow: 0 0 8px var(--accent);
+}
+
+/* ── Results toolbar ─────────────────────────────────────────── */
+.results-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+/* ── Lead table (shared by preview + results) ────────────────── */
+.table-scroll-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lead-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 640px;
+}
+
+.lead-table th {
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.lead-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.05);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.lead-table tr:hover td {
+  background: rgba(0, 229, 255, 0.02);
+}
+
+.row-ambiguous td {
+  background: rgba(255, 184, 0, 0.04) !important;
+  border-left: 2px solid rgba(255, 184, 0, 0.5);
+}
+
+.row-found td {
+  background: rgba(0, 255, 157, 0.02);
+}
+
+.td-num {
+  color: var(--text-dim);
+  font-size: 11px;
+  min-width: 28px;
+}
+
+.td-empty {
+  color: rgba(232, 244, 248, 0.2);
+}
+
+.td-company {
+  font-family: var(--font-head);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.td-email {
+  color: var(--success);
+  letter-spacing: 0.02em;
+}
+
+.td-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 11px;
+}
+
+.td-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── Status badges for leads ─────────────────────────────────── */
+.badge-pending    { background: rgba(232,244,248,0.06); color: var(--text-dim); }
+.badge-in-progress { background: rgba(255,184,0,0.12); color: var(--warn); animation: blink 1s step-start infinite; }
+.badge-found      { background: rgba(0,255,157,0.12);  color: var(--success); }
+.badge-not-found  { background: rgba(255,60,60,0.12);  color: var(--danger); }
+
+/* ── Confidence bar ──────────────────────────────────────────── */
+.conf-bar-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+}
+
+.conf-bar-fill {
+  height: 3px;
+  flex: 1;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.conf-bar-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  min-width: 28px;
+  text-align: right;
+}
+
+/* ── Ambiguous notice ────────────────────────────────────────── */
+.ambiguous-notice {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--warn);
+  background: rgba(255, 184, 0, 0.06);
+  border: 1px solid rgba(255, 184, 0, 0.2);
+  clip-path: var(--clip-sm);
+  padding: 8px 12px;
+}
+
+/* ── Mobile overrides for lead UI ────────────────────────────── */
+@media (max-width: 767px) {
+  .lead-input-section {
+    max-width: 100%;
+  }
+
+  .results-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .lead-table {
+    font-size: 11px;
+    min-width: 560px;
+  }
+
+  .paste-steps {
+    font-size: 11px;
+  }
+}

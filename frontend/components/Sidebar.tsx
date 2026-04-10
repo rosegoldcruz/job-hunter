@@ -2,54 +2,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
 const NAV = [
   {
     href: "/",
-    label: "Queue",
+    label: "Enrich",
     icon: (
       <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
-        <rect x="1" y="2" width="12" height="2.5" rx="0.5" />
-        <rect x="1" y="5.75" width="12" height="2.5" rx="0.5" />
-        <rect x="1" y="9.5" width="12" height="2.5" rx="0.5" />
-      </svg>
-    ),
-  },
-  {
-    href: "/approved",
-    label: "Approved",
-    icon: (
-      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
-        <path d="M2 7.5L5.5 11 12 3" />
-      </svg>
-    ),
-  },
-  {
-    href: "/pipeline",
-    label: "Pipeline",
-    icon: (
-      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
-        <rect x="1" y="2" width="3" height="10" rx="0.5" />
-        <rect x="5.5" y="4" width="3" height="8" rx="0.5" />
-        <rect x="10" y="1" width="3" height="11" rx="0.5" />
-      </svg>
-    ),
-  },
-  {
-    href: "/sent",
-    label: "Sent",
-    icon: (
-      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
-        <path d="M1 7h12M8 3l5 4-5 4" />
-      </svg>
-    ),
-  },
-  {
-    href: "/resume",
-    label: "Resume",
-    icon: (
-      <svg className="nav-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
-        <rect x="2" y="1" width="10" height="12" rx="0.5" />
-        <path d="M4 4h6M4 6.5h6M4 9h4" />
+        <circle cx="7" cy="5" r="2.5" />
+        <path d="M2 12c0-2.76 2.24-5 5-5s5 2.24 5 5" />
+        <path d="M10 2l1.5 1.5L10 5" />
+        <path d="M10 2h2.5v2.5" />
       </svg>
     ),
   },
@@ -65,11 +32,11 @@ const NAV = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }: Props) {
   const pathname = usePathname();
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${isOpen ? " mobile-open" : ""}`}>
       <div className="sidebar-logo">
         <svg className="sidebar-logo-icon" viewBox="0 0 28 28" fill="none">
           <polygon
@@ -85,15 +52,20 @@ export default function Sidebar() {
             fill="rgba(0,229,255,0.04)"
           />
         </svg>
-        <span className="sidebar-wordmark">RESUMEBOT</span>
-        <span className="sidebar-subtitle">MISSION CONTROL</span>
+        <span className="sidebar-wordmark">LEAD<br/>ENRICHER</span>
+        <span className="sidebar-subtitle">CONTACT PIPELINE</span>
       </div>
 
       <nav className="sidebar-nav">
         {NAV.map(({ href, label, icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
-            <Link key={href} href={href} className={`nav-item${active ? " active" : ""}`}>
+            <Link
+              key={href}
+              href={href}
+              className={`nav-item${active ? " active" : ""}`}
+              onClick={onClose}
+            >
               {icon}
               {label}
             </Link>
